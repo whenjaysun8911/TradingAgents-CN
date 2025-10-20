@@ -90,7 +90,8 @@ def create_social_media_analyst(llm, toolkit):
         logger.info(f"[社交媒体分析师] 公司名称: {company_name}")
 
         if toolkit.config["online_tools"]:
-            tools = [toolkit.get_stock_news_openai]
+            # 使用统一的情绪分析工具（自动识别A股/港股/美股并选择最佳数据源）
+            tools = [toolkit.get_stock_sentiment_unified]
         else:
             # 优先使用中国社交媒体数据，如果不可用则回退到Reddit
             tools = [

@@ -281,6 +281,8 @@ class TradingAgentsGraph:
             ),
             "social": ToolNode(
                 [
+                    # 统一情绪工具（自动识别A股/港股/美股数据源）
+                    self.toolkit.get_stock_sentiment_unified,
                     # online tools
                     self.toolkit.get_stock_news_openai,
                     # offline tools
@@ -289,10 +291,14 @@ class TradingAgentsGraph:
             ),
             "news": ToolNode(
                 [
-                    # online tools
+                    # 统一新闻工具（自动识别市场，并内置多源轮询与实时新闻聚合）
+                    self.toolkit.get_stock_news_unified,
+                    # 实时新闻（优先15-30分钟内的最新新闻）
+                    self.toolkit.get_realtime_stock_news,
+                    # 其他在线工具
                     self.toolkit.get_global_news_openai,
                     self.toolkit.get_google_news,
-                    # offline tools
+                    # 离线/备用工具
                     self.toolkit.get_finnhub_news,
                     self.toolkit.get_reddit_news,
                 ]
