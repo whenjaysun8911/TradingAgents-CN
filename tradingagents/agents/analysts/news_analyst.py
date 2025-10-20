@@ -12,6 +12,8 @@ from tradingagents.tools.unified_news_tool import create_unified_news_tool
 from tradingagents.utils.stock_utils import StockUtils
 # 导入Google工具调用处理器
 from tradingagents.agents.utils.google_tool_handler import GoogleToolCallHandler
+# 统一“最佳实践”提示词构建器
+from tradingagents.prompts import build_news_prompt
 
 logger = get_logger("analysts.news")
 
@@ -140,45 +142,12 @@ def create_news_analyst(llm, toolkit):
 请撰写详细的中文分析报告，并在报告末尾附上Markdown表格总结关键发现。"""
         )
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "您是一位专业的财经新闻分析师。"
-                    "\n🚨 CRITICAL REQUIREMENT - 绝对强制要求："
-                    "\n"
-                    "\n❌ 禁止行为："
-                    "\n- 绝对禁止在没有调用工具的情况下直接回答"
-                    "\n- 绝对禁止基于推测或假设生成任何分析内容"
-                    "\n- 绝对禁止跳过工具调用步骤"
-                    "\n- 绝对禁止说'我无法获取实时数据'等借口"
-                    "\n"
-                    "\n✅ 强制执行步骤："
-                    "\n1. 您的第一个动作必须是调用 get_stock_news_unified 工具"
-                    "\n2. 该工具会自动识别股票类型（A股、港股、美股）并获取相应新闻"
-                    "\n3. 只有在成功获取新闻数据后，才能开始分析"
-                    "\n4. 您的回答必须基于工具返回的真实数据"
-                    "\n"
-                    "\n🔧 工具调用格式示例："
-                    "\n调用: get_stock_news_unified(stock_code='{ticker}', max_news=10)"
-                    "\n"
-                    "\n⚠️ 如果您不调用工具，您的回答将被视为无效并被拒绝。"
-                    "\n⚠️ 您必须先调用工具获取数据，然后基于数据进行分析。"
-                    "\n⚠️ 没有例外，没有借口，必须调用工具。"
-                    "\n"
-                    "\n您可以访问以下工具：{tool_names}。"
-                    "\n{system_message}"
-                    "\n供您参考，当前日期是{current_date}。我们正在查看公司{ticker}。"
-                    "\n请按照上述要求执行，用中文撰写所有分析内容。",
-                ),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
+        # 使用统一的“最佳实践”提示词构建器
+        prompt = build_news_prompt(
+            tools=tools,
+            current_date=current_date,
+            ticker=ticker,
         )
-
-        prompt = prompt.partial(system_message=system_message)
-        prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
-        prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(ticker=ticker)
         
         # 获取模型信息用于统一新闻工具的特殊处理
         model_info = ""
