@@ -45,9 +45,17 @@ class Propagator:
             "news_report": "",
         }
 
-    def get_graph_args(self) -> Dict[str, Any]:
-        """Get arguments for the graph invocation."""
+    def get_graph_args(self, thread_id: str | None = None) -> Dict[str, Any]:
+        """Get arguments for the graph invocation, leveraging LangGraph v0.2 config.
+
+        Args:
+            thread_id: Optional thread id for checkpointer-based persistence.
+        """
+        cfg: Dict[str, Any] = {"recursion_limit": self.max_recur_limit}
+        if thread_id:
+            # LangGraph v0.2 uses config.configurable.thread_id to persist runs
+            cfg["configurable"] = {"thread_id": thread_id}
         return {
             "stream_mode": "values",
-            "config": {"recursion_limit": self.max_recur_limit},
+            "config": cfg,
         }
