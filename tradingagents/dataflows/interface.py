@@ -45,7 +45,7 @@ except ImportError as e:
     logger.warning(f"⚠️ stockstats工具不可用: {e}")
     STOCKSTATS_AVAILABLE = False
 from dateutil.relativedelta import relativedelta
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 import json
 import os
@@ -1406,43 +1406,47 @@ def get_hk_stock_data_unified(symbol: str, start_date: str = None, end_date: str
     try:
         logger.info(f"🇭🇰 获取港股数据: {symbol}")
 
-        # 优先使用AKShare港股数据（国内数据源，港股支持更好，更稳定）
+        # 并发竞速多个数据源，择优返回首个可用结果
+        tasks = []
         if AKSHARE_HK_AVAILABLE:
-            try:
-                logger.info(f"🔄 优先使用AKShare获取港股数据: {symbol}")
-                result = get_hk_stock_data_akshare(symbol, start_date, end_date)
-                if result and "❌" not in result:
-                    logger.info(f"✅ AKShare港股数据获取成功: {symbol}")
-                    return result
-                else:
-                    logger.error(f"⚠️ AKShare返回错误结果，尝试备用方案")
-            except Exception as e:
-                logger.error(f"⚠️ AKShare港股数据获取失败: {e}")
-
-        # 备用方案1：使用Yahoo Finance港股工具
+            tasks.append(("AKShare", lambda: get_hk_stock_data_akshare(symbol, start_date, end_date)))
         if HK_STOCK_AVAILABLE:
+            tasks.append(("YahooFinance", lambda: get_hk_stock_data(symbol, start_date, end_date)))
+        # FINNHUB 作为额外备选
+        def _try_finnhub():
             try:
-                logger.info(f"🔄 使用Yahoo Finance备用方案获取港股数据: {symbol}")
-                result = get_hk_stock_data(symbol, start_date, end_date)
-                if result and "❌" not in result:
-                    logger.info(f"✅ Yahoo Finance港股数据获取成功: {symbol}")
-                    return result
-                else:
-                    logger.error(f"⚠️ Yahoo Finance返回错误结果")
+                from .optimized_us_data import get_us_stock_data_cached
+                return get_us_stock_data_cached(symbol, start_date, end_date)
             except Exception as e:
-                logger.error(f"⚠️ Yahoo Finance港股数据获取失败: {e}")
+                logger.error(f"⚠️ FINNHUB港股数据获取失败: {e}")
+                return ""
+        tasks.append(("FINNHUB", _try_finnhub))
 
-        # 备用方案2：使用FINNHUB（付费用户可用）
-        try:
-            from .optimized_us_data import get_us_stock_data_cached
-            logger.info(f"🔄 使用FINNHUB获取港股数据: {symbol}")
-            result = get_us_stock_data_cached(symbol, start_date, end_date)
-            if result and "❌" not in result:
-                return result
-        except Exception as e:
-            logger.error(f"⚠️ FINNHUB港股数据获取失败: {e}")
+        best = (None, "")
+        if tasks:
+            with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+                fut_map = {ex.submit(fn): name for name, fn in tasks}
+                while fut_map:
+                    done, _ = wait(list(fut_map.keys()), timeout=4.0, return_when=FIRST_COMPLETED)
+                    if not done:
+                        break
+                    for fut in list(done):
+                        name = fut_map.pop(fut, None)
+                        try:
+                            res = fut.result()
+                        except Exception as e:
+                            logger.error(f"⚠️ 数据源 {name} 执行失败: {e}")
+                            res = ""
+                        if res and "❌" not in res and len(res) > 50:
+                            logger.info(f"✅ {name} 港股数据获取成功: {symbol}")
+                            return res
+                        if len(res) > len(best[1]):
+                            best = (name, res)
+        # 所有并发数据源未返回有效结果，降级到最佳候选或错误
+        if best[1]:
+            logger.warning(f"⚠️ 使用最佳候选数据源 {best[0]}，但数据质量可能受限")
+            return best[1]
 
-        # 所有数据源都失败
         error_msg = f"❌ 无法获取港股{symbol}数据 - 所有数据源都不可用"
         print(error_msg)
         return error_msg
