@@ -55,6 +55,7 @@ class TradingAgentsGraph:
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
+        self.selected_analysts = selected_analysts
 
         # Update the interface's config
         set_config(self.config)
@@ -317,6 +318,62 @@ class TradingAgentsGraph:
             ),
         }
 
+    def _safe_run(self, fn):
+        try:
+            return fn()
+        except Exception as e:
+            logger.debug(f"预获取子任务异常: {e}")
+            return None
+
+    def _prefetch_data(self, ticker: str, trade_date: str):
+        try:
+            if not self.config.get("enable_prefetch", False):
+                return
+            from datetime import datetime, timedelta
+            from concurrent.futures import ThreadPoolExecutor
+            # 计算日期范围
+            try:
+                start_dt = datetime.strptime(str(trade_date), "%Y-%m-%d") - timedelta(days=30)
+                start_date = start_dt.strftime("%Y-%m-%d")
+            except Exception:
+                start_date = str(trade_date)
+            end_date = str(trade_date)
+
+            tasks = []
+            if "market" in self.selected_analysts:
+                tasks.append(lambda: self.toolkit.get_stock_market_data_unified.invoke({
+                    "ticker": ticker,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                }))
+            if "news" in self.selected_analysts:
+                tasks.append(lambda: self.toolkit.get_stock_news_unified.invoke({
+                    "ticker": ticker,
+                    "curr_date": end_date,
+                }))
+            if "fundamentals" in self.selected_analysts:
+                tasks.append(lambda: self.toolkit.get_stock_fundamentals_unified.invoke({
+                    "ticker": ticker,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "curr_date": end_date,
+                }))
+            if "social" in self.selected_analysts:
+                tasks.append(lambda: self.toolkit.get_stock_sentiment_unified.invoke({
+                    "ticker": ticker,
+                    "curr_date": end_date,
+                }))
+
+            if not tasks:
+                return
+
+            logger.debug(f"🚀 [预获取] 启动并发预获取任务: {len(tasks)} 个")
+            with ThreadPoolExecutor(max_workers=min(4, len(tasks))) as ex:
+                for fn in tasks:
+                    ex.submit(self._safe_run, fn)
+        except Exception as e:
+            logger.warning(f"⚠️ 预获取数据失败: {e}")
+
     def propagate(self, company_name, trade_date):
         """Run the trading agents graph for a company on a specific date."""
 
@@ -327,6 +384,15 @@ class TradingAgentsGraph:
 
         self.ticker = company_name
         logger.debug(f"🔍 [GRAPH DEBUG] 设置self.ticker: '{self.ticker}'")
+
+        # 异步预获取数据以加速后续分析
+        if self.config.get("enable_prefetch", False):
+            try:
+                import threading
+                threading.Thread(target=self._prefetch_data, args=(company_name, trade_date), daemon=True).start()
+                logger.debug("🚀 [预获取] 后台预获取线程已启动")
+            except Exception as e:
+                logger.debug(f"⚠️ [预获取] 启动失败: {e}")
 
         # Initialize state
         logger.debug(f"🔍 [GRAPH DEBUG] 创建初始状态，传递参数: company_name='{company_name}', trade_date='{trade_date}'")

@@ -19,6 +19,8 @@ DEFAULT_CONFIG = {
     "max_recur_limit": 100,
     # Tool settings
     "online_tools": True,
+    # Performance tuning
+    "enable_prefetch": False,  # 预获取数据以加速分析（默认关闭，防止在无网络/无API密钥环境下阻塞）
 
     # Note: Database and cache configuration is now managed by .env file and config.database_manager
     # No database/cache settings in default config to avoid configuration conflicts
