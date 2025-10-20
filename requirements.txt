@@ -3,8 +3,8 @@
 # 或使用 uv：uv pip install -e .
 
 typing-extensions
-openai>=1.0.0,<2.0.0
-langchain-openai>=0.1.0
+openai
+langchain-openai
 langchain-experimental
 pandas
 yfinance
@@ -28,16 +28,16 @@ redis
 chainlit
 rich
 questionary
-langchain_anthropic
+langchain-anthropic
 langchain-google-genai
-google-genai>=0.1.0
-google-generativeai>=0.8.0
+google-genai
+google-generativeai
 dashscope
 streamlit
 plotly
 psutil
 pytdx  # 通达信数据接口（已弃用，保留兼容性）
 pymongo  # MongoDB数据库支持，用于Token使用记录存储
-markdown>=3.4.0  # Markdown处理，用于报告生成
-pypandoc>=1.11  # 文档格式转换，用于导出报告功能
-python-dotenv>=1.0.0  # 环境变量管理，用于.env文件解析
+markdown  # Markdown处理，用于报告生成
+pypandoc  # 文档格式转换，用于导出报告功能
+python-dotenv  # 环境变量管理，用于.env文件解析

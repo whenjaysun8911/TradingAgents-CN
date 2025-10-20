@@ -14,6 +14,8 @@ logger = get_logger("default")
 
 # 导入Google工具调用处理器
 from tradingagents.agents.utils.google_tool_handler import GoogleToolCallHandler
+# 优化后的统一提示词构建器
+from tradingagents.prompts import build_market_prompt
 
 
 def _get_company_name(ticker: str, market_info: dict) -> str:
@@ -307,76 +309,14 @@ def create_market_analyst(llm, toolkit):
                 toolkit.get_stockstats_indicators_report,
             ]
 
-        # 统一的系统提示，适用于所有股票类型
-        system_message = (
-            f"""你是一位专业的股票技术分析师。你必须对{company_name}（股票代码：{ticker}）进行详细的技术分析。
-
-**股票信息：**
-- 公司名称：{company_name}
-- 股票代码：{ticker}
-- 所属市场：{market_info['market_name']}
-- 计价货币：{market_info['currency_name']}（{market_info['currency_symbol']}）
-
-**工具调用指令：**
-你有一个工具叫做get_stock_market_data_unified，你必须立即调用这个工具来获取{company_name}（{ticker}）的市场数据。
-不要说你将要调用工具，直接调用工具。
-
-**分析要求：**
-1. 调用工具后，基于获取的真实数据进行技术分析
-2. 分析移动平均线、MACD、RSI、布林带等技术指标
-3. 考虑{market_info['market_name']}市场特点进行分析
-4. 提供具体的数值和专业分析
-5. 给出明确的投资建议
-6. 所有价格数据使用{market_info['currency_name']}（{market_info['currency_symbol']}）表示
-
-**输出格式：**
-## 📊 股票基本信息
-- 公司名称：{company_name}
-- 股票代码：{ticker}
-- 所属市场：{market_info['market_name']}
-
-## 📈 技术指标分析
-## 📉 价格趋势分析
-## 💭 投资建议
-
-请使用中文，基于真实数据进行分析。确保在分析中正确使用公司名称"{company_name}"和股票代码"{ticker}"。"""
+        # 使用统一的“最佳实践”提示词构建器
+        prompt = build_market_prompt(
+            tools=tools,
+            current_date=current_date,
+            ticker=ticker,
+            company_name=company_name,
+            market_info=market_info,
         )
-
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "你是一位专业的股票技术分析师，与其他分析师协作。"
-                    "使用提供的工具来获取和分析股票数据。"
-                    "如果你无法完全回答，没关系；其他分析师会从不同角度继续分析。"
-                    "执行你能做的技术分析工作来取得进展。"
-                    "如果你有明确的技术面投资建议：**买入/持有/卖出**，"
-                    "请在你的回复中明确标注，但不要使用'最终交易建议'前缀，因为最终决策需要综合所有分析师的意见。"
-                    "你可以使用以下工具：{tool_names}。\n{system_message}"
-                    "供你参考，当前日期是{current_date}。"
-                    "我们要分析的是{company_name}（股票代码：{ticker}）。"
-                    "请确保所有分析都使用中文，并在分析中正确区分公司名称和股票代码。",
-                ),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
-        )
-
-        prompt = prompt.partial(system_message=system_message)
-        # 安全地获取工具名称，处理函数和工具对象
-        tool_names = []
-        for tool in tools:
-            if hasattr(tool, 'name'):
-                tool_names.append(tool.name)
-            elif hasattr(tool, '__name__'):
-                tool_names.append(tool.__name__)
-            else:
-                tool_names.append(str(tool))
-
-        prompt = prompt.partial(tool_names=", ".join(tool_names))
-        prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(ticker=ticker)
-        prompt = prompt.partial(company_name=company_name)
 
         chain = prompt | llm.bind_tools(tools)
 
