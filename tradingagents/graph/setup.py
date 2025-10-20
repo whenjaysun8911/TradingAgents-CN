@@ -5,6 +5,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph, START
 from langgraph.prebuilt import ToolNode
 
+# LangGraph v0.2+: checkpointer for persistence/resume
+try:
+    from langgraph.checkpoint.memory import MemorySaver
+except Exception:  # pragma: no cover - fallback for older langgraph
+    MemorySaver = None  # type: ignore
+
 from tradingagents.agents import *
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.utils.agent_utils import Toolkit
@@ -47,6 +53,7 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
         self.config = config or {}
         self.react_llm = react_llm
+        self.checkpointer = None
 
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
@@ -249,5 +256,18 @@ class GraphSetup:
 
         workflow.add_edge("Risk Judge", END)
 
-        # Compile and return
-        return workflow.compile()
+        # Compile with optional checkpointer to leverage LangGraph latest persistence features
+        compiled = None
+        use_checkpointer = self.config.get("use_checkpointer", True)
+        if use_checkpointer and MemorySaver is not None:
+            try:
+                self.checkpointer = MemorySaver()
+                compiled = workflow.compile(checkpointer=self.checkpointer)
+                logger.debug("🧠 LangGraph checkpointer enabled (MemorySaver)")
+            except Exception as e:
+                logger.warning(f"⚠️ 启用checkpointer失败，回退到无持久化模式: {e}")
+                compiled = workflow.compile()
+        else:
+            compiled = workflow.compile()
+
+        return compiled

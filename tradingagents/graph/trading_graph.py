@@ -252,7 +252,7 @@ class TradingAgentsGraph:
             getattr(self, 'react_llm', None),
         )
 
-        self.propagator = Propagator()
+        self.propagator = Propagator(self.config.get("max_recur_limit", 100))
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
@@ -335,19 +335,25 @@ class TradingAgentsGraph:
         )
         logger.debug(f"🔍 [GRAPH DEBUG] 初始状态中的company_of_interest: '{init_agent_state.get('company_of_interest', 'NOT_FOUND')}'")
         logger.debug(f"🔍 [GRAPH DEBUG] 初始状态中的trade_date: '{init_agent_state.get('trade_date', 'NOT_FOUND')}'")
-        args = self.propagator.get_graph_args()
+
+        # Use LangGraph checkpointer thread to support resume/replay per (ticker, date)
+        thread_id = f"{company_name}:{trade_date}"
+        args = self.propagator.get_graph_args(thread_id=thread_id)
 
         if self.debug:
             # Debug mode with tracing
-            trace = []
+            state_accum = {**init_agent_state}
             for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) == 0:
-                    pass
-                else:
-                    chunk["messages"][-1].pretty_print()
-                    trace.append(chunk)
-
-            final_state = trace[-1]
+                # In values stream_mode, chunks contain updated fields only
+                if "messages" in chunk and isinstance(chunk["messages"], list) and len(chunk["messages"]) > 0:
+                    try:
+                        chunk["messages"][-1].pretty_print()
+                    except Exception:
+                        pass
+                # Merge updates into accumulated state
+                for k, v in chunk.items():
+                    state_accum[k] = v
+            final_state = state_accum
         else:
             # Standard mode without tracing
             final_state = self.graph.invoke(init_agent_state, **args)
